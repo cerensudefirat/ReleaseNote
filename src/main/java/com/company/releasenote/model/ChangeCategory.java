@@ -1,0 +1,16 @@
+package com.company.releasenote.model;
+
+public enum ChangeCategory {
+    DATABASE,
+    APPLICATION_PROPERTY,
+    ENVIRONMENT_VARIABLE,
+    EXTERNAL_SERVICE,
+    MESSAGING,
+    DEPLOYMENT,
+    FILE_OR_DIRECTORY,
+    SECURITY_OR_CERTIFICATE,
+    SCHEDULED_JOB,
+    UI_CHANGE,
+    CODE_CHANGE,
+    UNKNOWN
+}
