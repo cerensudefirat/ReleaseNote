@@ -1,0 +1,23 @@
+services:
+  release-note-api:
+    image: release-note-api:1.0
+    container_name: release-note-container
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      OLLAMA_MODEL: "qwen3:4b-instruct"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    restart: unless-stopped

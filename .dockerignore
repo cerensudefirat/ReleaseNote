@@ -1,0 +1,11 @@
+.idea
+.git
+*.iml
+src
+.mvn
+mvnw
+mvnw.cmd
+HELP.md
+
+target/*
+!target/release-note.jar
