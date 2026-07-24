@@ -22,11 +22,7 @@ public class ReleaseNoteAnalysisController {
     }
 
     @PostMapping("/analyze")
-    public ReleaseNoteAnalysisResponse analyze(
-            @Valid
-            @RequestBody
-            ReleaseNoteAnalysisRequest request
-    ) {
+    public ReleaseNoteAnalysisResponse analyze(@Valid @RequestBody ReleaseNoteAnalysisRequest request) {
         return analysisService.analyze(
                 request.releaseNote().toString()
         );

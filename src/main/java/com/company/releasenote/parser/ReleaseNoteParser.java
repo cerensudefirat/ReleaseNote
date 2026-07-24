@@ -2,18 +2,19 @@ package com.company.releasenote.parser;
 
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
 public class ReleaseNoteParser {
 
-    /*
-     * Release note içerisinde bulunabilecek bilinen başlıklar.
-     *
-     * Bu başlıklar, Description veya Configuration bölümünün
-     * nerede bittiğini anlamak için kullanılır.
-     */
+    private enum SectionType {
+        DESCRIPTION,
+        CONFIGURATION,
+        OTHER
+    }
+
     private static final String ALL_SECTION_HEADINGS =
             "(?:"
                     + "Description"
@@ -23,6 +24,7 @@ public class ReleaseNoteParser {
                     + "|Yapılandırma"
                     + "|Components"
                     + "|Bileşenler"
+                    + "|Test\\s+Environment\\s+and\\s+Status"
                     + "|Test\\s+Environment"
                     + "|Test\\s+Ortamı"
                     + "|Test\\s+Status"
@@ -36,77 +38,65 @@ public class ReleaseNoteParser {
     private static final int PATTERN_FLAGS =
             Pattern.CASE_INSENSITIVE
                     | Pattern.MULTILINE
-                    | Pattern.DOTALL
                     | Pattern.UNICODE_CASE;
 
-    /*
-     * Description başlığının bulunup bulunmadığını kontrol eder.
-     */
-    private static final Pattern DESCRIPTION_HEADING_PATTERN =
+    private static final Pattern SECTION_HEADING_PATTERN =
             Pattern.compile(
-                    "^\\s*(?:Description|Açıklama)\\s*:",
-                    PATTERN_FLAGS
-            );
-
-    /*
-     * Configuration başlığının bulunup bulunmadığını kontrol eder.
-     */
-    private static final Pattern CONFIGURATION_HEADING_PATTERN =
-            Pattern.compile(
-                    "^\\s*(?:Configuration|Konfigürasyon|Yapılandırma)\\s*:",
-                    PATTERN_FLAGS
-            );
-
-    /*
-     * Description başlığından başlayıp bir sonraki bilinen
-     * başlığa kadar olan metni alır.
-     */
-    private static final Pattern DESCRIPTION_SECTION_PATTERN =
-            Pattern.compile(
-                    "^\\s*(?:Description|Açıklama)\\s*:\\s*"
-                            + "(.*?)"
-                            + "(?=^\\s*"
+                    "^\\s*\\*?\\s*("
                             + ALL_SECTION_HEADINGS
-                            + "\\s*:|\\z)",
-                    PATTERN_FLAGS
-            );
-
-    /*
-     * Configuration başlığından başlayıp bir sonraki bilinen
-     * başlığa kadar olan metni alır.
-     */
-    private static final Pattern CONFIGURATION_SECTION_PATTERN =
-            Pattern.compile(
-                    "^\\s*(?:Configuration|Konfigürasyon|Yapılandırma)\\s*:\\s*"
-                            + "(.*?)"
-                            + "(?=^\\s*"
-                            + ALL_SECTION_HEADINGS
-                            + "\\s*:|\\z)",
+                            + ")\\s*\\*?\\s*:\\s*\\*?\\s*",
                     PATTERN_FLAGS
             );
 
     public ParsedReleaseNote parse(String releaseNote) {
-        String normalizedText = normalize(releaseNote);
+        String normalizedText = normalizeText(releaseNote);
 
-        boolean descriptionSectionPresent =
-                DESCRIPTION_HEADING_PATTERN
-                        .matcher(normalizedText)
-                        .find();
+        Matcher matcher = SECTION_HEADING_PATTERN.matcher(normalizedText);
 
-        boolean configurationSectionPresent =
-                CONFIGURATION_HEADING_PATTERN
-                        .matcher(normalizedText)
-                        .find();
+        String description = "";
+        String configuration = "";
 
-        String description = extractSection(
-                DESCRIPTION_SECTION_PATTERN,
-                normalizedText
-        );
+        boolean descriptionSectionPresent = false;
+        boolean configurationSectionPresent = false;
 
-        String configuration = extractSection(
-                CONFIGURATION_SECTION_PATTERN,
-                normalizedText
-        );
+        SectionMatch currentSection = null;
+
+        while (matcher.find()) {
+            if (currentSection != null) {
+                String sectionContent = normalizedText
+                        .substring(currentSection.contentStart(), matcher.start())
+                        .trim();
+
+                if (currentSection.sectionType() == SectionType.DESCRIPTION) {
+                    description = sectionContent;
+                } else if (currentSection.sectionType() == SectionType.CONFIGURATION) {
+                    configuration = sectionContent;
+                }
+            }
+
+            String heading = matcher.group(1);
+            SectionType sectionType = resolveSectionType(heading);
+
+            if (sectionType == SectionType.DESCRIPTION) {
+                descriptionSectionPresent = true;
+            } else if (sectionType == SectionType.CONFIGURATION) {
+                configurationSectionPresent = true;
+            }
+
+            currentSection = new SectionMatch(sectionType, matcher.end());
+        }
+
+        if (currentSection != null) {
+            String sectionContent = normalizedText
+                    .substring(currentSection.contentStart())
+                    .trim();
+
+            if (currentSection.sectionType() == SectionType.DESCRIPTION) {
+                description = sectionContent;
+            } else if (currentSection.sectionType() == SectionType.CONFIGURATION) {
+                configuration = sectionContent;
+            }
+        }
 
         return new ParsedReleaseNote(
                 description,
@@ -116,27 +106,35 @@ public class ReleaseNoteParser {
         );
     }
 
-    private String extractSection(
-            Pattern sectionPattern,
-            String releaseNote
-    ) {
-        Matcher matcher = sectionPattern.matcher(releaseNote);
-
-        if (!matcher.find()) {
+    private String normalizeText(String text) {
+        if (text == null) {
             return "";
         }
 
-        return matcher.group(1).trim();
+        return text
+                .replace("\r\n", "\n")
+                .replace("\r", "\n");
     }
 
-    private String normalize(String releaseNote) {
-        if (releaseNote == null) {
-            return "";
-        }
-
-        return releaseNote
-                .replace("\r\n", "\n")
-                .replace('\r', '\n')
+    private SectionType resolveSectionType(String heading) {
+        String normalizedHeading = heading
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ")
                 .trim();
+
+        return switch (normalizedHeading) {
+            case "description", "açıklama" -> SectionType.DESCRIPTION;
+
+            case "configuration", "konfigürasyon", "yapılandırma" ->
+                    SectionType.CONFIGURATION;
+
+            default -> SectionType.OTHER;
+        };
+    }
+
+    private record SectionMatch(
+            SectionType sectionType,
+            int contentStart
+    ) {
     }
 }
